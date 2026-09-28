@@ -2,32 +2,23 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using LiteNetLib;
-using LiteNetLib.Utils;
 using UnityEngine;
-using UnityEngine.Events;
-using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
 using KrokoshaCasualtiesMP;
 
 namespace MP3Client {
     internal class MP3ClientLog {
         protected const string TAG = "[debug] ";
-        public virtual void Info(string message) { Plugin.Log.LogInfo(TAG + message); }
-        public virtual void Warn(string message) { Plugin.Log.LogWarning(TAG + message); }
-        public virtual void Error(string message) { Plugin.Log.LogError(TAG + message); }
+        public virtual void Info(string message) { MP3Client.Log.LogInfo(TAG + message); }
+        public virtual void Warn(string message) { MP3Client.Log.LogWarning(TAG + message); }
+        public virtual void Error(string message) { MP3Client.Log.LogError(TAG + message); }
         public virtual void SendStart(ushort syncId, string fileName, int totalBytes) { }
         public virtual void SendChunk(ushort syncId, int chunkIndex, int offset, int length, float elapsedSeconds, float sinceLastSeconds) { }
         public virtual void SendChunkFailed(ushort syncId, int chunkIndex, int offset, Exception e) { Error("send chunk FAILED syncId=" + syncId + " #" + chunkIndex + " offset=" + offset + " : " + e); }
@@ -41,47 +32,55 @@ namespace MP3Client {
         public virtual void RecvCancelled(ushort syncId) { }
         public virtual void RecvDeadlineHit(ushort syncId) { Warn("recv deadline hit syncId=" + syncId + " - finalizing with whatever arrived, likely incomplete/corrupt file"); }
         public virtual void LogItemComponents(object item) { }
-        public virtual void GateDecision(bool allowed, string reason, bool networkRunning, bool isServer, bool isClient, bool allowDeviceMusic, bool pendingApproval) { }
+        public virtual void GateDecision(bool allowed, string reason, bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool pendingApproval) { }
         public virtual void Trace(string stage, string detail) { }
         public virtual void UIState(string stage, string detail) { }
         public virtual void NetState(string stage, string detail) { }
         public virtual void PatchedMethodsSummary(List<MethodBase> methods) { }
-        public virtual void StateDump(bool networkRunning, bool isServer, bool isClient, bool allowDeviceMusic, bool autoLoadMusicOnStart, float uiVerticalOffset, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool mp3NoAutoLoadNeutralized, bool deviceFolderLoadTriggered, bool wasNetworkRunning) { }
+        public virtual void StateDump(bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool autoRequestMusic, float uiVerticalOffset, bool uiOnTop, bool coloredButtons, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool mp3NoAutoLoadNeutralized, bool deviceFolderLoadTriggered, bool wasNetworkRunning) { }
     }
-    [BepInPlugin("mp3client", "MP3Client", "0.5")]
+    [BepInPlugin("02dumbass.mp3client", "MP3Client", "0.6.1")]
     [BepInDependency("KrokoshaCasualtiesMP", BepInDependency.DependencyFlags.HardDependency)]
-    public class Plugin : BaseUnityPlugin {
+    public class MP3Client : BaseUnityPlugin {
         internal static ManualLogSource Log;
-        internal static Plugin Instance;
+        internal static MP3Client Instance;
         internal static MP3ClientLog Debug = new MP3ClientLog();
         private static readonly ConcurrentQueue<Action> mainThreadQueue = new ConcurrentQueue<Action>();
-        internal static ConfigEntry<bool> AllowDeviceMusic;
-        internal static ConfigEntry<bool> AutoLoadMusicOnStart;
+        internal static ConfigEntry<bool> AutoLoadMusic;
+        internal static ConfigEntry<bool> LoadMusicOnLaunch;
+        internal static ConfigEntry<bool> AutoRequestMusic;
         internal static ConfigEntry<float> UIVerticalOffset;
+        internal static ConfigEntry<bool> UIOnTop;
+        internal static ConfigEntry<bool> ColoredButtons;
+
         public void Awake() {
             Log = Logger;
             Instance = this;
-            AllowDeviceMusic = Config.Bind("General", "AllowDeviceMusic", false, "If false, the MP3 player's on-disk device music folder is never auto-scanned. Base game bundled music is unaffected. A client can ask the host to approve a one-time load instead.");
-            AutoLoadMusicOnStart = Config.Bind("General", "AutoLoadMusicOnStart", true, "Host only. If true, automatically ask to load custom music when a multiplayer session starts. The MP3load command always works regardless of this setting.");
+            AutoLoadMusic = Config.Bind("General", "AutoLoadMusic", false, "If false, the MP3 player's on-disk device music folder is never auto-scanned. Base game bundled music is unaffected. A client can ask the host to approve a one-time load instead.");
+            LoadMusicOnLaunch = Config.Bind("General", "LoadMusicOnLaunch", false, "Host only. If true, the device music folder is loaded automatically when a multiplayer session starts, with no approval prompt.");
+            AutoRequestMusic = Config.Bind("General", "AutoRequestMusic", true, "Host only. If true, automatically ask to load custom music when a multiplayer session starts. The MP3load command always works regardless of this setting.");
+            UIOnTop = Config.Bind("UI", "UIOnTop", false, "If true, anchors the MP3Client UI block to the top of the screen instead of the center.");
+            ColoredButtons = Config.Bind("UI", "ColoredButtons", false, "If true, the Stop and Pause buttons will have red and orange background tints.");
             UIVerticalOffset = Config.Bind("UI", "UIVerticalOffset", 80f, "Pixels to shift the MP3Client dropdown/button block downward, so it clears the base game's own dropdown and label. Increase if they still overlap. Raised from 40 to 80 after 40 was reported as still overlapping.");
+
             TryUpgradeDebugLogger();
             Updater.ApplyPendingIfAny(Log);
             var harmony = new Harmony("mp3client");
-            harmony.PatchAll(typeof(Plugin).Assembly);
+            harmony.PatchAll(typeof(MP3Client).Assembly);
             TryReconcileMP3NoAutoLoad(harmony);
             LogPatchedMethods(harmony);
             StartCoroutine(Updater.CheckForUpdate(Log));
             StartCoroutine(DeferredRegisterCommands());
         }
         private static void LogPatchedMethods(Harmony harmony) {
-            Plugin.Debug.PatchedMethodsSummary(harmony.GetPatchedMethods().ToList());
+            MP3Client.Debug.PatchedMethodsSummary(harmony.GetPatchedMethods().ToList());
         }
         internal static bool MP3NoAutoLoadNeutralized;
         private static void TryReconcileMP3NoAutoLoad(Harmony harmony) {
             try {
                 var noAutoLoadType = AccessTools.TypeByName("MP3NoAutoLoad.MP3Menu_LoadAllMusic_BlockDevicePatch");
                 if (noAutoLoadType == null) {
-                    Plugin.Debug.Trace("TryReconcileMP3NoAutoLoad", "MP3NoAutoLoad plugin not detected, nothing to reconcile");
+                    MP3Client.Debug.Trace("TryReconcileMP3NoAutoLoad", "MP3NoAutoLoad plugin not detected, nothing to reconcile");
                     return;
                 }
                 var prefixMethod = AccessTools.Method(noAutoLoadType, "Prefix");
@@ -145,13 +144,18 @@ namespace MP3Client {
             Patch_GateNativeMusicListRequest.ResetForNewSession();
             if (KrokoshaScavMultiplayer.is_server) {
                 HeadlessMusicLoader.EnsureBaseGamePopulated();
-                SendPendingRequest(true);
+                if (LoadMusicOnLaunch.Value) {
+                    Log.LogInfo("mp3client: LoadMusicOnLaunch is on - loading device folder music without a prompt");
+                    HeadlessMusicLoader.EnsureDeviceFolderPopulated();
+                } else {
+                    SendPendingRequest(true);
+                }
             }
         }
         internal static void SendPendingRequest(bool automatic) {
             if (KrokoshaScavMultiplayer.is_server) {
-                if (automatic && !AutoLoadMusicOnStart.Value) {
-                    Log.LogInfo("mp3client: host self launch-trigger skipped - AutoLoadMusicOnStart is off");
+                if (automatic && !AutoRequestMusic.Value) {
+                    Log.LogInfo("mp3client: host self launch-trigger skipped - AutoRequestMusic is off");
                     return;
                 }
                 Log.LogInfo("mp3client: host self-triggered load, automatic=" + automatic);
@@ -169,9 +173,11 @@ namespace MP3Client {
                 KrokoshaScavMultiplayer.network_system_is_running,
                 KrokoshaScavMultiplayer.is_server,
                 KrokoshaScavMultiplayer.is_client,
-                AllowDeviceMusic.Value,
-                AutoLoadMusicOnStart.Value,
+                AutoLoadMusic.Value,
+                AutoRequestMusic.Value,
                 UIVerticalOffset.Value,
+                UIOnTop.Value,
+                ColoredButtons.Value,
                 HostPluginCheck.CurrentStatus.ToString(),
                 Patch_RegisterServerReceivers.pendingActive,
                 Patch_RegisterServerReceivers.pendingRequester.HasValue ? Patch_RegisterServerReceivers.pendingRequester.Value.ToString() : "none",

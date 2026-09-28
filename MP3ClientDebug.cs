@@ -36,11 +36,11 @@ namespace MP3Client {
         public override void RecvCancelled(ushort syncId) {
             Info("recv cancelled syncId=" + syncId);
         }
-        public override void GateDecision(bool allowed, string reason, bool networkRunning, bool isServer, bool isClient, bool allowDeviceMusic, bool pendingApproval) {
+        public override void GateDecision(bool allowed, string reason, bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool pendingApproval) {
             string verdict = allowed ? "ALLOWED" : "BLOCKED";
             Info("gate " + verdict + " device folder music load - " + reason);
-            Info("gate state: network_system_is_running=" + networkRunning + " is_server=" + isServer + " is_client=" + isClient + " AllowDeviceMusic=" + allowDeviceMusic + " pendingApproval=" + pendingApproval);
-            if (!allowed) Info("gate hint: run MP3load to ask the host, or set AllowDeviceMusic=true in the config to skip the gate entirely");
+            Info("gate state: network_system_is_running=" + networkRunning + " is_server=" + isServer + " is_client=" + isClient + " AutoLoadMusic=" + autoLoadMusic + " pendingApproval=" + pendingApproval);
+            if (!allowed) Info("gate hint: run MP3load to ask the host, or set AutoLoadMusic=true in the config to skip the gate entirely");
         }
         public override void Trace(string stage, string detail) {
             Info("trace [" + stage + "] " + detail);
@@ -68,10 +68,10 @@ namespace MP3Client {
                 Trace("Awake", "  " + (m.DeclaringType != null ? m.DeclaringType.FullName : "?") + "." + m.Name);
             }
         }
-        public override void StateDump(bool networkRunning, bool isServer, bool isClient, bool allowDeviceMusic, bool autoLoadMusicOnStart, float uiVerticalOffset, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool mp3NoAutoLoadNeutralized, bool deviceFolderLoadTriggered, bool wasNetworkRunning) {
+        public override void StateDump(bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool autoRequestMusic, float uiVerticalOffset, bool uiOnTop, bool coloredButtons, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool mp3NoAutoLoadNeutralized, bool deviceFolderLoadTriggered, bool wasNetworkRunning) {
             Trace("DumpState", "--- MP3Client state dump ---");
             Trace("DumpState", "network_system_is_running=" + networkRunning + " is_server=" + isServer + " is_client=" + isClient);
-            Trace("DumpState", "config AllowDeviceMusic=" + allowDeviceMusic + " AutoLoadMusicOnStart=" + autoLoadMusicOnStart + " UIVerticalOffset=" + uiVerticalOffset);
+            Trace("DumpState", "config AutoLoadMusic=" + autoLoadMusic + " AutoRequestMusic=" + autoRequestMusic + " UIVerticalOffset=" + uiVerticalOffset + " UIOnTop=" + uiOnTop + " ColoredButtons=" + coloredButtons);
             Trace("DumpState", "host plugin check status=" + hostPluginStatus);
             Trace("DumpState", "pending request active=" + pendingActive + " requester=" + pendingRequester);
             Trace("DumpState", "custommusic folder=" + customMusicFolder + " songs=" + customMusicSongCount);
@@ -92,7 +92,7 @@ namespace MP3Client {
             }, null, Array.Empty<ValueTuple<string, string>>()));
             Con.RegisterCommand(new Command("MP3load", "MP3Client - CLIENT ONLY - ask the host to load their music now.", delegate (string[] splited) {
                 if (!KrokoshaScavMultiplayer.is_client || KrokoshaScavMultiplayer.is_server) return;
-                Plugin.SendPendingRequest(false);
+                MP3Client.SendPendingRequest(false);
                 KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: MP3load - sent pending request to host.");
             }, null, Array.Empty<ValueTuple<string, string>>()));
             Con.RegisterCommand(new Command("MP3accept", "MP3Client - HOST ONLY - approve the pending music-load request.", delegate (string[] splited) {
@@ -104,7 +104,7 @@ namespace MP3Client {
                 Patch_RegisterServerReceivers.RejectPendingRequest();
             }, null, Array.Empty<ValueTuple<string, string>>()));
             Con.RegisterCommand(new Command("MP3state", "MP3Client - dump full plugin state to the log for debugging.", delegate (string[] splited) {
-                Plugin.DumpState();
+                MP3Client.DumpState();
             }, null, Array.Empty<ValueTuple<string, string>>()));
         }
     }

@@ -1,15 +1,8 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -17,9 +10,7 @@ using HarmonyLib;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
-using UnityEngine.Events;
 using UnityEngine.Networking;
-using UnityEngine.SceneManagement;
 using KrokoshaCasualtiesMP;
 
 namespace MP3Client {
@@ -48,23 +39,23 @@ namespace MP3Client {
             return AccessTools.Method(t, "_RegisterClientReceivers");
         }
         static void Postfix() {
-            Plugin.Debug.NetState("Patch_RegisterClientReceivers.Postfix", "_RegisterClientReceivers returned, registering our client message handlers (MSG_RESEND_REQUEST, MSG_PLUGIN_PONG, MSG_LOAD_APPROVED)");
+            MP3Client.Debug.NetState("Patch_RegisterClientReceivers.Postfix", "_RegisterClientReceivers returned, registering our client message handlers (MSG_RESEND_REQUEST, MSG_PLUGIN_PONG, MSG_LOAD_APPROVED)");
             var regMethod = typeof(Net).GetMethod("RegisterClientReceiver", BindingFlags.NonPublic | BindingFlags.Static);
             try {
                 regMethod.Invoke(null, new object[] { Protocol.MSG_RESEND_REQUEST, (KrokoshaScavMultiplayer.KrokoshaHandleNamedMessageDelegate)OnResendRequest });
                 regMethod.Invoke(null, new object[] { Protocol.MSG_PLUGIN_PONG, (KrokoshaScavMultiplayer.KrokoshaHandleNamedMessageDelegate)OnPluginPong });
                 regMethod.Invoke(null, new object[] { Protocol.MSG_LOAD_APPROVED, (KrokoshaScavMultiplayer.KrokoshaHandleNamedMessageDelegate)OnLoadApproved });
             } catch (TargetInvocationException e) {
-                Plugin.Log.LogWarning("mp3client: Patch_RegisterClientReceivers.Postfix registration failed: " + e.InnerException);
+                MP3Client.Log.LogWarning("mp3client: Patch_RegisterClientReceivers.Postfix registration failed: " + e.InnerException);
             }
         }
         static void OnPluginPong(knetid sender, ref NetDataReader reader) {
-            Plugin.Debug.NetState("OnPluginPong", "received from sender=" + sender);
+            MP3Client.Debug.NetState("OnPluginPong", "received from sender=" + sender);
             HostPluginCheck.OnPong();
         }
         static void OnLoadApproved(knetid sender, ref NetDataReader reader) {
-            Plugin.Debug.NetState("OnLoadApproved", "received MSG_LOAD_APPROVED from sender=" + sender);
-            Plugin.Debug.Trace("OnLoadApproved", "host approved custom music load");
+            MP3Client.Debug.NetState("OnLoadApproved", "received MSG_LOAD_APPROVED from sender=" + sender);
+            MP3Client.Debug.Trace("OnLoadApproved", "host approved custom music load");
             KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: host approved - loading device folder music now.");
             Patch_GateNativeMusicListRequest.ClientApproved = true;
             Patch_GateNativeMusicListRequest.TrySendNativeMusicListRequest();
@@ -72,13 +63,13 @@ namespace MP3Client {
         static void OnResendRequest(knetid sender, ref NetDataReader reader) {
             ushort syncId = reader.GetUShort();
             int fromOffset = reader.GetInt();
-            Plugin.Debug.NetState("OnResendRequest", "sender=" + sender + " syncId=" + syncId + " fromOffset=" + fromOffset);
+            MP3Client.Debug.NetState("OnResendRequest", "sender=" + sender + " syncId=" + syncId + " fromOffset=" + fromOffset);
             if (!Patch_InterceptBrowsePlay.pendingFiles.TryGetValue(syncId, out var cachedData)) {
-                Plugin.Debug.NetState("OnResendRequest", "syncId=" + syncId + " not found in pendingFiles, ignoring");
+                MP3Client.Debug.NetState("OnResendRequest", "syncId=" + syncId + " not found in pendingFiles, ignoring");
                 return;
             }
-            if (fromOffset >= cachedData.Bytes.Length) { Plugin.Debug.NetState("OnResendRequest", "fromOffset=" + fromOffset + " >= length " + cachedData.Bytes.Length + ", ignoring"); return; }
-            Plugin.Instance.StartCoroutine(Patch_InterceptBrowsePlay.SendFileCoroutine(syncId, cachedData.Ext, cachedData.Bytes, fromOffset, false));
+            if (fromOffset >= cachedData.Bytes.Length) { MP3Client.Debug.NetState("OnResendRequest", "fromOffset=" + fromOffset + " >= length " + cachedData.Bytes.Length + ", ignoring"); return; }
+            MP3Client.Instance.StartCoroutine(Patch_InterceptBrowsePlay.SendFileCoroutine(syncId, cachedData.Ext, cachedData.Bytes, fromOffset, false));
         }
     }
     internal class Transfer {
@@ -102,7 +93,7 @@ namespace MP3Client {
             return AccessTools.Method(t, "_RegisterServerReceivers");
         }
         static void Postfix() {
-            Plugin.Debug.NetState("Patch_RegisterServerReceivers.Postfix", "_RegisterServerReceivers returned, registering our server message handlers");
+            MP3Client.Debug.NetState("Patch_RegisterServerReceivers.Postfix", "_RegisterServerReceivers returned, registering our server message handlers");
             RegisterHandlers();
         }
         static void RegisterHandlers() {
@@ -114,10 +105,10 @@ namespace MP3Client {
             TryRegister(regMethod, Protocol.MSG_PAUSE, (KrokoshaScavMultiplayer.KrokoshaHandleNamedMessageDelegate)OnPause);
             TryRegister(regMethod, Protocol.MSG_PLUGIN_PING, (KrokoshaScavMultiplayer.KrokoshaHandleNamedMessageDelegate)OnPluginPing);
             TryRegister(regMethod, Protocol.MSG_ASK_LOAD, (KrokoshaScavMultiplayer.KrokoshaHandleNamedMessageDelegate)OnPendingRequest);
-            Plugin.Debug.NetState("Patch_RegisterServerReceivers.RegisterHandlers", "done registering MSG_BEGIN/CHUNK/END/CANCEL/PAUSE/PLUGIN_PING/ASK_LOAD");
+            MP3Client.Debug.NetState("Patch_RegisterServerReceivers.RegisterHandlers", "done registering MSG_BEGIN/CHUNK/END/CANCEL/PAUSE/PLUGIN_PING/ASK_LOAD");
         }
         static void OnPluginPing(knetid sender, ref NetDataReader reader) {
-            Plugin.Debug.NetState("OnPluginPing", "received from sender=" + sender + ", replying with MSG_PLUGIN_PONG");
+            MP3Client.Debug.NetState("OnPluginPing", "received from sender=" + sender + ", replying with MSG_PLUGIN_PONG");
             var writer = Net.CreateWriter(Protocol.MSG_PLUGIN_PONG);
             var dm = DeliveryMethod.ReliableOrdered;
             IEnumerable<knetid> targets = new List<knetid> { sender };
@@ -136,7 +127,7 @@ namespace MP3Client {
         }
         internal static void DismissPendingPromptIfAny(string reason) {
             if (!pendingActive) return;
-            Plugin.Debug.Trace("DismissPendingPromptIfAny", "clearing pending request (" + reason + ") - music is already loading via a different path");
+            MP3Client.Debug.Trace("DismissPendingPromptIfAny", "clearing pending request (" + reason + ") - music is already loading via a different path");
             pendingActive = false;
             pendingRequester = null;
             TryHideNativePrompt();
@@ -149,29 +140,29 @@ namespace MP3Client {
                     var m = AccessTools.Method(promptType, name);
                     if (m != null && m.GetParameters().Length == 0) { m.Invoke(null, null); return; }
                 }
-                Plugin.Debug.Trace("TryHideNativePrompt", "no known hide method found on UIChoicePrompt - prompt state is cleared, but the visual will linger until timeout or manually clicked");
+                MP3Client.Debug.Trace("TryHideNativePrompt", "no known hide method found on UIChoicePrompt - prompt state is cleared, but the visual will linger until timeout or manually clicked");
             } catch (Exception e) {
-                Plugin.Debug.Trace("TryHideNativePrompt", "couldn't hide the native prompt automatically: " + e.Message);
+                MP3Client.Debug.Trace("TryHideNativePrompt", "couldn't hide the native prompt automatically: " + e.Message);
             }
         }
         static void OnPendingRequest(knetid sender, ref NetDataReader reader) {
             bool automatic;
             reader.Get(out automatic);
-            Plugin.Debug.NetState("OnPendingRequest", "received MSG_ASK_LOAD from " + sender + " automatic=" + automatic);
+            MP3Client.Debug.NetState("OnPendingRequest", "received MSG_ASK_LOAD from " + sender + " automatic=" + automatic);
             Server_HandleLoadRequest(sender);
         }
         internal static void Server_HandleLoadRequest(knetid? sender) {
             string who = sender.HasValue ? sender.Value.ToString() : "host (self)";
             if (pendingActive) {
-                Plugin.Debug.Trace("Server_HandleLoadRequest", "load request from " + who + " supersedes previous pending request - prompt already showing, not re-queuing");
+                MP3Client.Debug.Trace("Server_HandleLoadRequest", "load request from " + who + " supersedes previous pending request - prompt already showing, not re-queuing");
                 pendingRequester = sender;
                 return;
             }
             pendingRequester = sender;
             pendingActive = true;
-            Plugin.Debug.Trace("Server_HandleLoadRequest", "load request from " + who + " is now PENDING - showing prompt to host");
+            MP3Client.Debug.Trace("Server_HandleLoadRequest", "load request from " + who + " is now PENDING - showing prompt to host");
             KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: [ALERT] music load requested - type MP3accept or MP3reject, or use the prompt.");
-            Plugin.PostHudOnlyStatus("mp3client: pending music-load request - MP3accept / MP3reject");
+            MP3Client.PostHudOnlyStatus("mp3client: pending music-load request - MP3accept / MP3reject");
             ShowPendingPrompt();
         }
         static void ShowPendingPrompt() {
@@ -184,27 +175,27 @@ namespace MP3Client {
                 var accept = new UIChoicePrompt.Prompt.PromptChoice();
                 accept.text = "Accept";
                 accept.action = delegate () {
-                    Plugin.Debug.Trace("ShowPendingPrompt", "Accept clicked");
+                    MP3Client.Debug.Trace("ShowPendingPrompt", "Accept clicked");
                     AcceptPendingRequest();
                 };
                 var reject = new UIChoicePrompt.Prompt.PromptChoice();
                 reject.text = "Reject";
                 reject.action = delegate () {
-                    Plugin.Debug.Trace("ShowPendingPrompt", "Reject clicked");
+                    MP3Client.Debug.Trace("ShowPendingPrompt", "Reject clicked");
                     RejectPendingRequest();
                 };
                 prompt.choices = new UIChoicePrompt.Prompt.PromptChoice[] { accept, reject };
                 UIChoicePrompt.ShowPrompt(prompt);
             } catch (Exception e) {
-                Plugin.Log.LogWarning("mp3client: ShowPendingPrompt failed, falling back to MP3accept/MP3reject console commands: " + e.Message);
+                MP3Client.Log.LogWarning("mp3client: ShowPendingPrompt failed, falling back to MP3accept/MP3reject console commands: " + e.Message);
             }
         }
         internal static void ForceLoad() {
             if (!KrokoshaScavMultiplayer.is_server) {
-                Plugin.Debug.Trace("ForceLoad", "not the host, ignoring");
+                MP3Client.Debug.Trace("ForceLoad", "not the host, ignoring");
                 return;
             }
-            Plugin.Debug.Trace("ForceLoad", "bypassing the pending-request system entirely - loading device folder music now");
+            MP3Client.Debug.Trace("ForceLoad", "bypassing the pending-request system entirely - loading device folder music now");
             pendingActive = false;
             pendingRequester = null;
             HeadlessMusicLoader.EnsureDeviceFolderPopulated();
@@ -212,13 +203,13 @@ namespace MP3Client {
         }
         internal static void AcceptPendingRequest() {
             if (!pendingActive) {
-                Plugin.Debug.Trace("AcceptPendingRequest", "no pending request");
+                MP3Client.Debug.Trace("AcceptPendingRequest", "no pending request");
                 KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: MP3accept - no pending request.");
                 return;
             }
             knetid? requester = pendingRequester;
             string who = requester.HasValue ? requester.Value.ToString() : "host (self)";
-            Plugin.Debug.Trace("AcceptPendingRequest", "approving pending request from " + who);
+            MP3Client.Debug.Trace("AcceptPendingRequest", "approving pending request from " + who);
             pendingActive = false;
             pendingRequester = null;
             if (requester.HasValue) {
@@ -232,13 +223,13 @@ namespace MP3Client {
         }
         internal static void RejectPendingRequest() {
             if (!pendingActive) {
-                Plugin.Debug.Trace("RejectPendingRequest", "no pending request");
+                MP3Client.Debug.Trace("RejectPendingRequest", "no pending request");
                 KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: MP3reject - no pending request.");
                 return;
             }
             knetid? requester = pendingRequester;
             string who = requester.HasValue ? requester.Value.ToString() : "host (self)";
-            Plugin.Debug.Trace("RejectPendingRequest", "denying pending request from " + who);
+            MP3Client.Debug.Trace("RejectPendingRequest", "denying pending request from " + who);
             pendingActive = false;
             pendingRequester = null;
             KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: MP3reject - request denied.");
@@ -257,18 +248,18 @@ namespace MP3Client {
                 var serverMainType = AccessTools.TypeByName("KrokoshaCasualtiesMP.ServerMain");
                 var announceMethod = serverMainType != null ? AccessTools.Method(serverMainType, "Server_AnnounceAlert") : null;
                 if (announceMethod == null) {
-                    Plugin.Log.LogWarning("mp3client: Server_AnnounceAlert not found, load-result alert not sent");
+                    MP3Client.Log.LogWarning("mp3client: Server_AnnounceAlert not found, load-result alert not sent");
                     return;
                 }
                 var targets = new List<knetid> { requester.Value };
                 announceMethod.Invoke(null, new object[] { msg, true, true, targets });
             } catch (Exception e) {
-                Plugin.Log.LogWarning("mp3client: SendLoadResult failed: " + e.Message);
+                MP3Client.Log.LogWarning("mp3client: SendLoadResult failed: " + e.Message);
             }
         }
         static void OnPause(knetid sender, ref NetDataReader reader) {
             ushort syncId = reader.GetUShort();
-            Plugin.Debug.NetState("OnPause", "received MSG_PAUSE from sender=" + sender + " syncId=" + syncId);
+            MP3Client.Debug.NetState("OnPause", "received MSG_PAUSE from sender=" + sender + " syncId=" + syncId);
             TogglePausePlayingAudio(syncId);
         }
         internal static void TogglePausePlayingAudio(ushort syncId) {
@@ -286,10 +277,10 @@ namespace MP3Client {
             if (source == null || source.clip == null) return;
             if (source.isPlaying) {
                 source.Pause();
-                Plugin.Debug.Trace("TogglePausePlayingAudio", "paused syncId=" + syncId);
+                MP3Client.Debug.Trace("TogglePausePlayingAudio", "paused syncId=" + syncId);
             } else if (source.time > 0f) {
                 source.UnPause();
-                Plugin.Debug.Trace("TogglePausePlayingAudio", "resumed syncId=" + syncId);
+                MP3Client.Debug.Trace("TogglePausePlayingAudio", "resumed syncId=" + syncId);
             }
         }
         static void OnBegin(knetid sender, ref NetDataReader reader) {
@@ -304,7 +295,7 @@ namespace MP3Client {
                 Data = new byte[totalLen],
                 ChunkReceived = new bool[Math.Max(chunkCount, 1)]
             };
-            Plugin.Debug.RecvBegin(syncId, totalLen, ext);
+            MP3Client.Debug.RecvBegin(syncId, totalLen, ext);
         }
         static void OnChunk(knetid sender, ref NetDataReader reader) {
             ushort syncId = reader.GetUShort();
@@ -328,7 +319,7 @@ namespace MP3Client {
             tr.EndReceived = true;
             if (!TryFinalize(syncId, tr) && !tr.WaitLoopStarted) {
                 tr.WaitLoopStarted = true;
-                Plugin.Instance.StartCoroutine(WaitThenFinalize(syncId, tr));
+                MP3Client.Instance.StartCoroutine(WaitThenFinalize(syncId, tr));
             }
         }
         static bool TryFinalize(ushort syncId, Transfer tr) {
@@ -381,7 +372,7 @@ namespace MP3Client {
             byte[] full = tr.Data;
             string tempPath = Path.Combine(Path.GetTempPath(), "mp3client_" + syncId + tr.Extension);
             File.WriteAllBytes(tempPath, full);
-            var co = Plugin.Instance.StartCoroutine(DecodeAndPlay(tempPath, tr.Extension, syncId));
+            var co = MP3Client.Instance.StartCoroutine(DecodeAndPlay(tempPath, tr.Extension, syncId));
             decoding[syncId] = co;
         }
         static void OnCancel(knetid sender, ref NetDataReader reader) {
@@ -393,10 +384,10 @@ namespace MP3Client {
             }
             Coroutine co;
             if (decoding.TryGetValue(syncId, out co)) {
-                Plugin.Instance.StopCoroutine(co);
+                MP3Client.Instance.StopCoroutine(co);
                 decoding.Remove(syncId);
             }
-            Plugin.Debug.RecvCancelled(syncId);
+            MP3Client.Debug.RecvCancelled(syncId);
         }
         static IEnumerator DecodeAndPlay(string path, string ext, ushort syncId) {
             float startTime = Time.unscaledTime;
@@ -408,7 +399,7 @@ namespace MP3Client {
                 using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip(url, type)) {
                     yield return www.SendWebRequest();
                     if (!string.IsNullOrEmpty(www.error)) {
-                        Plugin.Log.LogError("mp3client: decode failed: " + www.error);
+                        MP3Client.Log.LogError("mp3client: decode failed: " + www.error);
                         try { File.Delete(path); } catch { }
                         yield break;
                     }
@@ -421,7 +412,7 @@ namespace MP3Client {
                     var playMethod = AccessTools.TypeByName("KrokoshaCasualtiesMP.MP3Menu_Play_MultiplayerPatch")
                         .GetMethod("Server_PlayThisSongOnThisMp3Player", BindingFlags.Public | BindingFlags.Static);
                     playMethod.Invoke(null, new object[] { clip, itemObj });
-                    Plugin.Debug.RecvDone(syncId, clip != null ? clip.samples * Math.Max(clip.channels, 1) * 2 : 0, Time.unscaledTime - startTime);
+                    MP3Client.Debug.RecvDone(syncId, clip != null ? clip.samples * Math.Max(clip.channels, 1) * 2 : 0, Time.unscaledTime - startTime);
                 }
             } finally {
                 decoding.Remove(syncId);

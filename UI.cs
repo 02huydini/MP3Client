@@ -1,25 +1,19 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using LiteNetLib;
-using LiteNetLib.Utils;
 using UnityEngine;
 using UnityEngine.Events;
-using UnityEngine.Networking;
-using UnityEngine.SceneManagement;
 using KrokoshaCasualtiesMP;
 
 namespace MP3Client {
@@ -35,34 +29,34 @@ namespace MP3Client {
             return AccessTools.Method(t, "UpdateList");
         }
         static void Postfix(object __instance) {
-            Plugin.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "UpdateList returned for instance=" + __instance.GetHashCode() + " is_server=" + KrokoshaScavMultiplayer.is_server + " is_client=" + KrokoshaScavMultiplayer.is_client);
+            MP3Client.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "UpdateList returned for instance=" + __instance.GetHashCode() + " is_server=" + KrokoshaScavMultiplayer.is_server + " is_client=" + KrokoshaScavMultiplayer.is_client);
             LastMp3MenuInstance = new WeakReference(__instance);
-            if (KrokoshaScavMultiplayer.is_server && KrokoshaScavMultiplayer.network_system_is_running && !Plugin.AllowDeviceMusic.Value && !HeadlessMusicLoader.DeviceFolderLoadTriggered && !Patch_RegisterServerReceivers.pendingActive) {
-                Plugin.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "host opened the menu with device folder music not yet approved - auto-firing the pending-request prompt");
+            if (KrokoshaScavMultiplayer.is_server && KrokoshaScavMultiplayer.network_system_is_running && !MP3Client.AutoLoadMusic.Value && !HeadlessMusicLoader.DeviceFolderLoadTriggered && !Patch_RegisterServerReceivers.pendingActive) {
+                MP3Client.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "host opened the menu with device folder music not yet approved - auto-firing the pending-request prompt");
                 Patch_RegisterServerReceivers.Server_HandleLoadRequest(null);
             }
             object marker;
             if (builtFor.TryGetValue(__instance, out marker)) {
-                Plugin.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "instance=" + __instance.GetHashCode() + " already built, skipping");
+                MP3Client.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "instance=" + __instance.GetHashCode() + " already built, skipping");
                 return;
             }
-            Plugin.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "instance=" + __instance.GetHashCode() + " starting DeferredBuild");
-            Plugin.Instance.StartCoroutine(DeferredBuild(__instance));
+            MP3Client.Debug.Trace("Patch_BuildSeparateSongUI.Postfix", "instance=" + __instance.GetHashCode() + " starting DeferredBuild");
+            MP3Client.Instance.StartCoroutine(DeferredBuild(__instance));
         }
         static IEnumerator DeferredBuild(object mp3MenuInstance) {
-            Plugin.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " started, looking up 'dropdown' field");
+            MP3Client.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " started, looking up 'dropdown' field");
             object dropdown = null;
             try {
                 dropdown = ReflectionHelpers.GetMember(mp3MenuInstance, "dropdown");
             } catch (Exception e) {
-                Plugin.Log.LogError("mp3client: 'dropdown' field lookup failed: " + e);
+                MP3Client.Log.LogError("mp3client: 'dropdown' field lookup failed: " + e);
                 yield break;
             }
             if (dropdown == null) {
-                Plugin.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " 'dropdown' field is null, giving up");
+                MP3Client.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " 'dropdown' field is null, giving up");
                 yield break;
             }
-            Plugin.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " dropdown found, waiting up to 5s for options to populate");
+            MP3Client.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " dropdown found, waiting up to 5s for options to populate");
             float deadline = Time.unscaledTime + 5f;
             System.Collections.IList options = null;
             while (Time.unscaledTime < deadline) {
@@ -71,16 +65,16 @@ namespace MP3Client {
                 yield return null;
             }
             if (options == null || options.Count == 0) {
-                Plugin.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " gave up after 5s, options never populated (options=" + (options == null ? "null" : "count 0") + ")");
+                MP3Client.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " gave up after 5s, options never populated (options=" + (options == null ? "null" : "count 0") + ")");
                 yield break;
             }
-            Plugin.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " options populated (count=" + options.Count + "), calling LocalLibraryUI.Build");
+            MP3Client.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " options populated (count=" + options.Count + "), calling LocalLibraryUI.Build");
             try {
                 LocalLibraryUI.Build(mp3MenuInstance, (Component)dropdown);
                 builtFor.Add(mp3MenuInstance, new object());
-                Plugin.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " LocalLibraryUI.Build completed without throwing");
+                MP3Client.Debug.Trace("DeferredBuild", "instance=" + mp3MenuInstance.GetHashCode() + " LocalLibraryUI.Build completed without throwing");
             } catch (Exception e) {
-                Plugin.Log.LogError("mp3client: Patch_BuildSeparateSongUI failed: " + e);
+                MP3Client.Log.LogError("mp3client: Patch_BuildSeparateSongUI failed: " + e);
             }
         }
     }
@@ -91,7 +85,7 @@ namespace MP3Client {
             return AccessTools.Method(t, "Exit");
         }
         static void Prefix(object __instance) {
-            Plugin.Debug.Trace("MP3Menu.Exit", "instance=" + __instance.GetHashCode() + " is_server=" + KrokoshaScavMultiplayer.is_server + " is_client=" + KrokoshaScavMultiplayer.is_client);
+            MP3Client.Debug.Trace("MP3Menu.Exit", "instance=" + __instance.GetHashCode() + " is_server=" + KrokoshaScavMultiplayer.is_server + " is_client=" + KrokoshaScavMultiplayer.is_client);
         }
     }
     [HarmonyPatch]
@@ -101,12 +95,12 @@ namespace MP3Client {
             return AccessTools.Method(t, "Start");
         }
         static void Prefix(object __instance) {
-            Plugin.Debug.Trace("MP3Menu.Start", "instance=" + __instance.GetHashCode() + " is_server=" + KrokoshaScavMultiplayer.is_server + " is_client=" + KrokoshaScavMultiplayer.is_client + " network_system_is_running=" + KrokoshaScavMultiplayer.network_system_is_running);
+            MP3Client.Debug.Trace("MP3Menu.Start", "instance=" + __instance.GetHashCode() + " is_server=" + KrokoshaScavMultiplayer.is_server + " is_client=" + KrokoshaScavMultiplayer.is_client + " network_system_is_running=" + KrokoshaScavMultiplayer.network_system_is_running);
         }
         static void Postfix(object __instance) {
             var dropdown = ReflectionHelpers.GetMember(__instance, "dropdown");
             var options = dropdown != null ? ReflectionHelpers.GetMember(dropdown, "options") as System.Collections.IList : null;
-            Plugin.Debug.Trace("MP3Menu.Start", "instance=" + __instance.GetHashCode() + " finished, dropdown=" + (dropdown != null ? "found" : "NULL") + " options.count=" + (options != null ? options.Count.ToString() : "n/a"));
+            MP3Client.Debug.Trace("MP3Menu.Start", "instance=" + __instance.GetHashCode() + " finished, dropdown=" + (dropdown != null ? "found" : "NULL") + " options.count=" + (options != null ? options.Count.ToString() : "n/a"));
         }
     }
     internal static class CustomMusicFolder {
@@ -127,7 +121,7 @@ namespace MP3Client {
                 }
                 result.Sort(StringComparer.OrdinalIgnoreCase);
             } catch (Exception e) {
-                Plugin.Log.LogWarning("mp3client: failed to scan " + GetPath() + ": " + e);
+                MP3Client.Log.LogWarning("mp3client: failed to scan " + GetPath() + ": " + e);
             }
             return result;
         }
@@ -216,7 +210,7 @@ namespace MP3Client {
         public static void CancelActive(object mp3MenuInstance) {
             ActiveTransfer existing;
             if (!activeTransferFor.TryGetValue(mp3MenuInstance, out existing)) return;
-            if (existing.Routine != null) Plugin.Instance.StopCoroutine(existing.Routine);
+            if (existing.Routine != null) MP3Client.Instance.StopCoroutine(existing.Routine);
             Patch_InterceptBrowsePlay.SendCancel(existing.SyncId);
             Patch_InterceptBrowsePlay.StopSilence();
             activeTransferFor.Remove(mp3MenuInstance);
@@ -244,11 +238,11 @@ namespace MP3Client {
             }
         }
         public static void Build(object mp3MenuInstance, Component originalDropdown) {
-            Plugin.Debug.UIState("Build", "building MP3Client UI onto the MP3 menu, instance=" + mp3MenuInstance.GetHashCode());
+            MP3Client.Debug.UIState("Build", "building MP3Client UI onto the MP3 menu, instance=" + mp3MenuInstance.GetHashCode());
             HostGatedControls.Clear();
             Transform parent = originalDropdown.transform.parent != null ? originalDropdown.transform.parent : originalDropdown.transform;
             var origRect = originalDropdown.GetComponent<RectTransform>();
-            Plugin.Debug.UIState("Build", "parent=" + parent.name + " origRect=" + (origRect != null ? origRect.rect.ToString() : "null"));
+            MP3Client.Debug.UIState("Build", "parent=" + parent.name + " origRect=" + (origRect != null ? origRect.rect.ToString() : "null"));
             float rowHeight = origRect != null ? origRect.rect.height + 4f : 34f;
             GameObject libraryGO = UnityEngine.Object.Instantiate(originalDropdown.gameObject, parent, false);
             libraryGO.name = LibraryDropdownName;
@@ -260,15 +254,15 @@ namespace MP3Client {
             libraryDropdownFor.Add(mp3MenuInstance, libDropdown);
             CurrentLibDropdown = libDropdown;
             int optionCount = RefreshLibraryOptions(libDropdown);
-            Plugin.Debug.UIState("Build", "library dropdown cloned and populated, " + optionCount + " options (including placeholder)");
+            MP3Client.Debug.UIState("Build", "library dropdown cloned and populated, " + optionCount + " options (including placeholder)");
             HookValueChanged(libDropdown, originalDropdown, mp3MenuInstance);
             HookBaseDropdownValueChanged(originalDropdown, libDropdown, mp3MenuInstance);
             var panel = FindPanel(originalDropdown.transform);
-            Plugin.Debug.UIState("Build", "FindPanel result: " + (panel != null ? panel.name : "null (will use parent as search root)"));
+            MP3Client.Debug.UIState("Build", "FindPanel result: " + (panel != null ? panel.name : "null (will use parent as search root)"));
             var searchRoot = panel != null ? panel : parent;
             var buttonType = UITypes.Button;
             var allButtons = searchRoot.GetComponentsInChildren(buttonType, true);
-            Plugin.Debug.UIState("Build", "searched '" + searchRoot.name + "' for buttons, found " + allButtons.Length + ": [" + string.Join(", ", allButtons.Select(b => b.gameObject.name)) + "]");
+            MP3Client.Debug.UIState("Build", "searched '" + searchRoot.name + "' for buttons, found " + allButtons.Length + ": [" + string.Join(", ", allButtons.Select(b => b.gameObject.name)) + "]");
             Component playButton = null;
             Component exitButton = null;
             foreach (Component c in allButtons) {
@@ -276,13 +270,16 @@ namespace MP3Client {
                 if (playButton == null && n.Contains("play")) playButton = c;
                 if (exitButton == null && n.Contains("exit")) exitButton = c;
             }
-            Plugin.Debug.UIState("Build", "playButton=" + (playButton != null ? playButton.gameObject.name : "NOT FOUND") + " exitButton=" + (exitButton != null ? exitButton.gameObject.name : "NOT FOUND"));
+            MP3Client.Debug.UIState("Build", "playButton=" + (playButton != null ? playButton.gameObject.name : "NOT FOUND") + " exitButton=" + (exitButton != null ? exitButton.gameObject.name : "NOT FOUND"));
+
             if (playButton != null) {
-                Plugin.Debug.UIState("Build", "using row-layout path (Browse/Stop/Pause + Play/Exit)");
+                MP3Client.Debug.UIState("Build", "using row-layout path (Browse/Stop/Pause + Play/Exit)");
                 Component anchorButton = exitButton != null ? exitButton : playButton;
                 GameObject browseGO = BuildBrowseFromTemplate(anchorButton, originalDropdown, mp3MenuInstance);
+
                 GameObject stopGO = BuildStopFromTemplate(browseGO);
                 GameObject pauseGO = BuildPauseFromTemplate(browseGO);
+
                 AssembleContainerLayout(originalDropdown, libraryGO, playButton, exitButton, browseGO, stopGO, pauseGO, rowHeight, panel);
                 HookPlayButton(playButton, mp3MenuInstance);
                 HostGatedControls.Add(browseGO.GetComponent(buttonType));
@@ -290,19 +287,19 @@ namespace MP3Client {
                 HostGatedControls.Add(pauseGO.GetComponent(buttonType));
                 RegisterPauseButton(mp3MenuInstance, pauseGO.GetComponent(buttonType));
             } else {
-                Plugin.Debug.UIState("Build", "using fallback path (no base Play button found in search root)");
+                MP3Client.Debug.UIState("Build", "using fallback path (no base Play button found in search root)");
                 var libRect = libraryGO.GetComponent<RectTransform>();
-                if (libRect != null && origRect != null) libRect.anchoredPosition = origRect.anchoredPosition + new Vector2(0f, -(rowHeight + Plugin.UIVerticalOffset.Value));
-                BuildFallbackRow(mp3MenuInstance, parent, origRect, rowHeight, Plugin.UIVerticalOffset.Value);
-                GrowPanel(panel, rowHeight * 1.5f + Plugin.UIVerticalOffset.Value);
+                if (libRect != null && origRect != null) libRect.anchoredPosition = origRect.anchoredPosition + new Vector2(0f, -(rowHeight + MP3Client.UIVerticalOffset.Value));
+                BuildFallbackRow(mp3MenuInstance, parent, origRect, rowHeight, MP3Client.UIVerticalOffset.Value);
+                GrowPanel(panel, rowHeight * 1.5f + MP3Client.UIVerticalOffset.Value);
             }
             try {
                 HostPluginCheck.EnsureChecked(libDropdown);
-                Plugin.Debug.UIState("Build", "HostPluginCheck.EnsureChecked completed");
+                MP3Client.Debug.UIState("Build", "HostPluginCheck.EnsureChecked completed");
             } catch (Exception e) {
-                Plugin.Log.LogError("mp3client: EnsureChecked failed: " + e);
+                MP3Client.Log.LogError("mp3client: EnsureChecked failed: " + e);
             }
-            Plugin.Debug.UIState("Build", "finished, HostGatedControls count=" + HostGatedControls.Count);
+            MP3Client.Debug.UIState("Build", "finished, HostGatedControls count=" + HostGatedControls.Count);
         }
         public static Sprite LoadEmbeddedIcon(string resourceFileName) {
             try {
@@ -310,7 +307,7 @@ namespace MP3Client {
                 string resourceName = assembly.GetManifestResourceNames()
                     .FirstOrDefault(r => r.EndsWith(resourceFileName, StringComparison.OrdinalIgnoreCase));
                 if (string.IsNullOrEmpty(resourceName)) {
-                    Plugin.Log.LogError("mp3client: Icon missing! Did you mark " + resourceFileName + " as an Embedded Resource?");
+                    MP3Client.Log.LogError("mp3client: Icon missing! Did you mark " + resourceFileName + " as an Embedded Resource?");
                     return null;
                 }
                 using (var stream = assembly.GetManifestResourceStream(resourceName)) {
@@ -329,7 +326,7 @@ namespace MP3Client {
                     return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f));
                 }
             } catch (Exception e) {
-                Plugin.Log.LogError("mp3client: Icon load exception: " + e);
+                MP3Client.Log.LogError("mp3client: Icon load exception: " + e);
                 return null;
             }
         }
@@ -358,18 +355,18 @@ namespace MP3Client {
             var onClick = ReflectionHelpers.GetMember(newButton, "onClick");
             var addListener = onClick.GetType().GetMethod("AddListener");
             UnityAction handler = () => {
-                Plugin.Debug.Trace("HookPlayButton", "clicked, instance=" + mp3MenuInstance.GetHashCode() + " IsLocalLastSelected=" + LocalLibraryUI.IsLocalLastSelected(mp3MenuInstance));
+                MP3Client.Debug.Trace("HookPlayButton", "clicked, instance=" + mp3MenuInstance.GetHashCode() + " IsLocalLastSelected=" + LocalLibraryUI.IsLocalLastSelected(mp3MenuInstance));
                 if (LocalLibraryUI.IsLocalLastSelected(mp3MenuInstance)) {
                     string path;
                     if (LocalLibraryUI.TryGetStaged(mp3MenuInstance, out path) && !string.IsNullOrEmpty(path)) {
-                        Plugin.Debug.Trace("HookPlayButton", "routing to local staged song: " + path);
+                        MP3Client.Debug.Trace("HookPlayButton", "routing to local staged song: " + path);
                         Patch_InterceptBrowsePlay.BeginSilenceUntilClipChanges();
                         Patch_InterceptBrowsePlay.SendStagedSong(mp3MenuInstance, path);
                         return;
                     }
-                    Plugin.Debug.Trace("HookPlayButton", "IsLocalLastSelected true but TryGetStaged failed/empty - falling through to base selection");
+                    MP3Client.Debug.Trace("HookPlayButton", "IsLocalLastSelected true but TryGetStaged failed/empty - falling through to base selection");
                 }
-                Plugin.Debug.Trace("HookPlayButton", "routing to base dropdown selection");
+                MP3Client.Debug.Trace("HookPlayButton", "routing to base dropdown selection");
                 LocalLibraryUI.PlayBaseSelectionWithoutExit(mp3MenuInstance);
             };
             addListener.Invoke(onClick, new object[] { handler });
@@ -378,7 +375,7 @@ namespace MP3Client {
             var menuType = UITypes.MP3Menu;
             var loadingField = AccessTools.Field(menuType, "loadingMusic");
             if (loadingField != null && (bool)loadingField.GetValue(null)) {
-                Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "skipped - still loading music");
+                MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "skipped - still loading music");
                 return;
             }
             var dropdown = ReflectionHelpers.GetMember(mp3MenuInstance, "dropdown");
@@ -396,9 +393,9 @@ namespace MP3Client {
                             writer.Put(syncInfo.syncId);
                             var dm = DeliveryMethod.ReliableUnordered;
                             Net.Client_Send(in dm, in writer);
-                            Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer client - sent native play-request msg 10137 index=" + index + " syncId=" + syncInfo.syncId);
+                            MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer client - sent native play-request msg 10137 index=" + index + " syncId=" + syncInfo.syncId);
                         } else {
-                            Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer client - mp3 player not registered, cannot send play request");
+                            MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer client - mp3 player not registered, cannot send play request");
                         }
                     } else {
                         var clipsFieldMp = AccessTools.Field(menuType, "clips");
@@ -407,36 +404,36 @@ namespace MP3Client {
                             var serverPlayMethod = AccessTools.Method(typeof(MP3Menu_Play_MultiplayerPatch), "Server_PlayThisSongOnThisMp3Player");
                             if (serverPlayMethod != null) {
                                 serverPlayMethod.Invoke(null, new object[] { clipsMp[index], itemObj });
-                                Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer host - played directly via Server_PlayThisSongOnThisMp3Player index=" + index);
+                                MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer host - played directly via Server_PlayThisSongOnThisMp3Player index=" + index);
                             } else {
-                                Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer host - Server_PlayThisSongOnThisMp3Player method not found");
+                                MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer host - Server_PlayThisSongOnThisMp3Player method not found");
                             }
                         } else {
-                            Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer host - clips null or index " + index + " out of range");
+                            MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer host - clips null or index " + index + " out of range");
                         }
                     }
                     return;
                 }
-                Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer active but no known mp3 player instance - falling back to local MusicManager playback");
+                MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "multiplayer active but no known mp3 player instance - falling back to local MusicManager playback");
             }
             var clipsField = AccessTools.Field(menuType, "clips");
             var clips = clipsField != null ? clipsField.GetValue(null) as System.Collections.IList : null;
             if (clips == null || index < 0 || index >= clips.Count) {
-                Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "skipped - clips null or index " + index + " out of range");
+                MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "skipped - clips null or index " + index + " out of range");
                 return;
             }
             var clip = clips[index] as AudioClip;
-            Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "solo/offline - index=" + index + " clip=" + (clip != null ? clip.name : "NULL"));
+            MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "solo/offline - index=" + index + " clip=" + (clip != null ? clip.name : "NULL"));
             var musicManagerType = AccessTools.TypeByName("MusicManager");
             var mainField = musicManagerType != null ? AccessTools.Field(musicManagerType, "main") : null;
             var mainInstance = mainField != null ? mainField.GetValue(null) : null;
             var playSongMethod = musicManagerType != null ? AccessTools.Method(musicManagerType, "PlaySong") : null;
             if (mainInstance == null || playSongMethod == null) {
-                Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "skipped - MusicManager.main/PlaySong not found (main=" + (mainInstance != null) + " method=" + (playSongMethod != null) + ")");
+                MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "skipped - MusicManager.main/PlaySong not found (main=" + (mainInstance != null) + " method=" + (playSongMethod != null) + ")");
                 return;
             }
             playSongMethod.Invoke(mainInstance, new object[] { clip });
-            Plugin.Debug.Trace("PlayBaseSelectionWithoutExit", "PlaySong invoked successfully");
+            MP3Client.Debug.Trace("PlayBaseSelectionWithoutExit", "PlaySong invoked successfully");
         }
         private const string LayoutRootName = "MP3Client_LayoutRoot";
         private static GameObject BuildRow(Transform parent, string name, Type hLayoutType, Type layoutElementType, float rowHeight) {
@@ -473,17 +470,27 @@ namespace MP3Client {
             GameObject root = new GameObject(LayoutRootName, typeof(RectTransform));
             root.transform.SetParent(oldParent, false);
             var rootRect = root.GetComponent<RectTransform>();
-            rootRect.anchorMin = origRect.anchorMin;
-            rootRect.anchorMax = origRect.anchorMax;
-            rootRect.pivot = origRect.pivot;
-            rootRect.anchoredPosition = origRect.anchoredPosition + new Vector2(0f, -Plugin.UIVerticalOffset.Value);
-            rootRect.sizeDelta = new Vector2(origRect.rect.width, rowHeight);
+            float newRootHeight = (rowHeight * 4f) + (spacing * 3f);
+
+            if (MP3Client.UIOnTop.Value) {
+                rootRect.anchorMin = new Vector2(0.5f, 1f);
+                rootRect.anchorMax = new Vector2(0.5f, 1f);
+                rootRect.pivot = new Vector2(0.5f, 1f);
+            } else {
+                rootRect.anchorMin = new Vector2(0.5f, 0.5f);
+                rootRect.anchorMax = new Vector2(0.5f, 0.5f);
+                rootRect.pivot = new Vector2(0.5f, 0.5f);
+            }
+
+            rootRect.anchoredPosition = new Vector2(0f, -(rowHeight * 0.25f));
+            rootRect.sizeDelta = new Vector2(origRect.rect.width, newRootHeight);
+
             root.transform.SetSiblingIndex(originalDropdown.transform.GetSiblingIndex());
             var vLayoutType = UITypes.VerticalLayoutGroup;
             var hLayoutType = UITypes.HorizontalLayoutGroup;
             var layoutElementType = UITypes.LayoutElement;
             if (vLayoutType == null || hLayoutType == null) {
-                Plugin.Log.LogError("mp3client: VerticalLayoutGroup/HorizontalLayoutGroup not found - cannot build container layout");
+                MP3Client.Log.LogError("mp3client: VerticalLayoutGroup/HorizontalLayoutGroup not found - cannot build container layout");
                 UnityEngine.Object.DestroyImmediate(root);
                 return;
             }
@@ -494,6 +501,7 @@ namespace MP3Client {
             ReflectionHelpers.SetMember(vLayout, "childControlWidth", true);
             ReflectionHelpers.SetMember(vLayout, "childControlHeight", true);
             ReflectionHelpers.SetMember(vLayout, "childAlignment", TextAnchor.UpperCenter);
+
             originalDropdown.transform.SetParent(root.transform, false);
             SetRowLayoutElement(originalDropdown.gameObject, layoutElementType, rowHeight);
             libraryGO.transform.SetParent(root.transform, false);
@@ -505,6 +513,7 @@ namespace MP3Client {
             GameObject row2 = BuildRow(root.transform, "MP3Client_Row_PlayExit", hLayoutType, layoutElementType, rowHeight);
             if (exitButton != null) exitButton.transform.SetParent(row2.transform, false);
             playButton.transform.SetParent(row2.transform, false);
+
             StripLayoutElement(browseGO, layoutElementType);
             StripLayoutElement(stopGO, layoutElementType);
             StripLayoutElement(pauseGO, layoutElementType);
@@ -515,16 +524,17 @@ namespace MP3Client {
             NeutralizeCompetingLayout(pauseGO.GetComponent<RectTransform>());
             NeutralizeCompetingLayout(playButton.GetComponent<RectTransform>());
             if (exitButton != null) NeutralizeCompetingLayout(exitButton.GetComponent<RectTransform>());
-            float newRootHeight = (rowHeight * 4f) + (spacing * 3f);
-            rootRect.sizeDelta = new Vector2(origRect.rect.width, newRootHeight);
-            GrowPanel(panel, (newRootHeight - rowHeight) + Plugin.UIVerticalOffset.Value);
+
+            float addedHeight = (rowHeight * 2.5f) + (spacing * 2f);
+            GrowPanel(panel, addedHeight);
+
             var rebuilderType = UITypes.LayoutRebuilder;
             if (rebuilderType != null) {
                 var forceRebuild = rebuilderType.GetMethod("ForceRebuildLayoutImmediate", BindingFlags.Public | BindingFlags.Static);
                 if (forceRebuild != null) forceRebuild.Invoke(null, new object[] { rootRect });
             }
         }
-        private static GameObject BuildLabeledClone(GameObject template, string name, string label, Color color, Action onClick) {
+        private static GameObject BuildLabeledClone(GameObject template, string name, string label, Color color, Action onClick, string iconName = null) {
             GameObject go = UnityEngine.Object.Instantiate(template, template.transform.parent, false);
             go.name = name;
             var buttonComp = ReplaceButtonComponent(go);
@@ -532,11 +542,7 @@ namespace MP3Client {
             var addListener = onClickObj.GetType().GetMethod("AddListener");
             UnityAction handler = () => onClick();
             addListener.Invoke(onClickObj, new object[] { handler });
-            var imageType = UITypes.Image;
-            foreach (Component img in go.GetComponentsInChildren(imageType, true)) {
-                if (img.gameObject == go) continue;
-                img.gameObject.SetActive(false);
-            }
+
             var tmpTextType = UITypes.TMPText;
             bool labelSet = false;
             if (tmpTextType != null) {
@@ -565,15 +571,31 @@ namespace MP3Client {
                 ReflectionHelpers.SetMember(textComp, "color", Color.white);
                 ReflectionHelpers.SetMember(textComp, "alignment", 4);
             }
+            var imageType = UITypes.Image;
             var mainImage = go.GetComponent(imageType);
             if (mainImage != null) ReflectionHelpers.SetMember(mainImage, "color", color);
+
+            if (!string.IsNullOrEmpty(iconName)) {
+                Sprite customSprite = LoadEmbeddedIcon(iconName);
+                if (customSprite != null) {
+                    foreach (Component img in go.GetComponentsInChildren(imageType, true)) {
+                        if (img.gameObject == go) continue;
+                        if (img.gameObject.activeSelf) {
+                            ReflectionHelpers.SetMember(img, "sprite", customSprite);
+                            break;
+                        }
+                    }
+                }
+            }
             return go;
         }
-        private static GameObject BuildStopFromTemplate(GameObject browseTemplate) {
-            return BuildLabeledClone(browseTemplate, "MP3Client_StopButton", "Stop", new Color(1f, 0.25f, 0.25f, 0.85f), OnStopButtonClicked);
+        private static GameObject BuildStopFromTemplate(GameObject template) {
+            Color btnColor = MP3Client.ColoredButtons.Value ? new Color(1f, 0.25f, 0.25f, 0.85f) : Color.white;
+            return BuildLabeledClone(template, "MP3Client_StopButton", "Stop", btnColor, OnStopButtonClicked, "StopIcon.png");
         }
-        private static GameObject BuildPauseFromTemplate(GameObject browseTemplate) {
-            return BuildLabeledClone(browseTemplate, "MP3Client_PauseButton", "Pause", new Color(1f, 0.75f, 0.1f, 0.85f), OnPauseButtonClicked);
+        private static GameObject BuildPauseFromTemplate(GameObject template) {
+            Color btnColor = MP3Client.ColoredButtons.Value ? new Color(1f, 0.75f, 0.1f, 0.85f) : Color.white;
+            return BuildLabeledClone(template, "MP3Client_PauseButton", "Pause", btnColor, OnPauseButtonClicked, "PauseIcon.png");
         }
         private static GameObject BuildBrowseFromTemplate(Component anchorButton, Component originalDropdown, object mp3MenuInstance) {
             var anchorParent = anchorButton.transform.parent;
@@ -584,8 +606,9 @@ namespace MP3Client {
             var addListener = onClickObj.GetType().GetMethod("AddListener");
             UnityAction handler = () => Patch_InterceptBrowsePlay.BrowseAndPackage(mp3MenuInstance);
             addListener.Invoke(onClickObj, new object[] { handler });
+
             var imageType = UITypes.Image;
-            Sprite customSprite = LoadEmbeddedIcon("FileIcon.png");
+            Sprite customSprite = LoadEmbeddedIcon("BrowseIcon.png");
             Component iconImage = null;
             foreach (Component img in browseGO.GetComponentsInChildren(imageType, true)) {
                 if (img.gameObject == browseGO) continue;
@@ -649,7 +672,19 @@ namespace MP3Client {
             if (panel == null) return;
             var rt = panel as RectTransform;
             if (rt == null) return;
+
+            if (MP3Client.UIOnTop.Value) {
+                rt.anchorMin = new Vector2(0.5f, 1f);
+                rt.anchorMax = new Vector2(0.5f, 1f);
+                rt.pivot = new Vector2(0.5f, 1f);
+            } else {
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+            }
+
             rt.sizeDelta = new Vector2(rt.sizeDelta.x, rt.sizeDelta.y + extraHeight);
+            rt.anchoredPosition = Vector2.zero;
         }
         private static void BuildFallbackRow(object mp3MenuInstance, Transform parent, RectTransform origRect, float rowHeight, float verticalOffset) {
             float fullWidth = origRect != null ? origRect.rect.width : 150f;
@@ -795,14 +830,14 @@ namespace MP3Client {
         }
         private static Coroutine silenceRoutine;
         public static void BeginSilenceUntilClipChanges() {
-            if (silenceRoutine != null) { Plugin.Instance.StopCoroutine(silenceRoutine); silenceRoutine = null; }
+            if (silenceRoutine != null) { MP3Client.Instance.StopCoroutine(silenceRoutine); silenceRoutine = null; }
             var sources = GetLocalAudioSources();
             if (sources.Count == 0) return;
             object previousClip = ReflectionHelpers.GetMember(sources[0], "clip");
-            silenceRoutine = Plugin.Instance.StartCoroutine(SilenceUntilClipChanges(sources, previousClip));
+            silenceRoutine = MP3Client.Instance.StartCoroutine(SilenceUntilClipChanges(sources, previousClip));
         }
         public static void StopSilence() {
-            if (silenceRoutine != null) { Plugin.Instance.StopCoroutine(silenceRoutine); silenceRoutine = null; }
+            if (silenceRoutine != null) { MP3Client.Instance.StopCoroutine(silenceRoutine); silenceRoutine = null; }
             foreach (var src in GetLocalAudioSources()) {
                 try { ReflectionHelpers.SetMember(src, "mute", false); } catch { }
             }
@@ -897,7 +932,7 @@ namespace MP3Client {
         internal static readonly Dictionary<ushort, (string Ext, byte[] Bytes)> pendingFiles = new Dictionary<ushort, (string, byte[])>();
         static void SendFile(object mp3MenuInstance, ushort syncId, string ext, byte[] bytes) {
             pendingFiles[syncId] = (ext, bytes);
-            var co = Plugin.Instance.StartCoroutine(SendFileCoroutine(syncId, ext, bytes, 0, true, mp3MenuInstance));
+            var co = MP3Client.Instance.StartCoroutine(SendFileCoroutine(syncId, ext, bytes, 0, true, mp3MenuInstance));
             LocalLibraryUI.RegisterTransfer(mp3MenuInstance, syncId, co);
         }
         internal static IEnumerator SendFileCoroutine(ushort syncId, string ext, byte[] bytes, int startOffset, bool sendBegin, object mp3MenuInstance = null) {
@@ -911,7 +946,7 @@ namespace MP3Client {
                     beginWriter.Put(ext);
                     var dmBegin = DeliveryMethod.ReliableOrdered;
                     Net.Client_Send(in dmBegin, in beginWriter);
-                    Plugin.Debug.SendStart(syncId, ext, bytes.Length);
+                    MP3Client.Debug.SendStart(syncId, ext, bytes.Length);
                     yield return null;
                 }
                 int offset = startOffset;
@@ -935,7 +970,7 @@ namespace MP3Client {
                     int percent = bytes.Length > 0 ? (int)((offset / (float)bytes.Length) * 100f) : 100;
                     while (nextThresholdIndex < percentThresholds.Length && percent >= percentThresholds[nextThresholdIndex]) {
                         KrokoshaScavMultiplayer.DoMultiplayerStatusMessageLog("mp3client: staged with " + percentThresholds[nextThresholdIndex] + "% package");
-                        Plugin.Debug.SendProgress(syncId, offset, bytes.Length, Time.unscaledTime - startTime);
+                        MP3Client.Debug.SendProgress(syncId, offset, bytes.Length, Time.unscaledTime - startTime);
                         nextThresholdIndex++;
                     }
                     if (chunkIndex % Protocol.CHUNKS_PER_FRAME == 0) yield return null;
@@ -945,11 +980,11 @@ namespace MP3Client {
                 endWriter.Put(syncId);
                 var dmEnd = DeliveryMethod.ReliableOrdered;
                 Net.Client_Send(in dmEnd, in endWriter);
-                Plugin.Debug.SendDone(syncId, bytes.Length, Time.unscaledTime - startTime);
+                MP3Client.Debug.SendDone(syncId, bytes.Length, Time.unscaledTime - startTime);
                 if (mp3MenuInstance != null) LocalLibraryUI.ClearIfCurrent(mp3MenuInstance, syncId);
                 exitReason = "completed normally";
             } finally {
-                Plugin.Debug.SendCoroutineExit(syncId, exitReason);
+                MP3Client.Debug.SendCoroutineExit(syncId, exitReason);
             }
         }
     }
@@ -990,9 +1025,9 @@ namespace MP3Client {
                 try {
                     result = ShowBlocking(filter);
                 } catch (Exception e) {
-                    Plugin.Log.LogError("mp3client: file dialog failed: " + e);
+                    MP3Client.Log.LogError("mp3client: file dialog failed: " + e);
                 }
-                Plugin.RunOnMainThread(() => onResult(result));
+                MP3Client.RunOnMainThread(() => onResult(result));
             });
             thread.SetApartmentState(ApartmentState.STA);
             thread.IsBackground = true;

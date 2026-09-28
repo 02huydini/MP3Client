@@ -1,25 +1,13 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using LiteNetLib;
-using LiteNetLib.Utils;
 using UnityEngine;
-using UnityEngine.Events;
-using UnityEngine.Networking;
-using UnityEngine.SceneManagement;
 using KrokoshaCasualtiesMP;
 
 namespace MP3Client {
@@ -33,13 +21,13 @@ namespace MP3Client {
         }
         private static bool TryApplyNonClientState(object libDropdown) {
             if (!KrokoshaScavMultiplayer.network_system_is_running) {
-                Plugin.Debug.UIState("TryApplyNonClientState", "no active session - showing no-server message, gate controls disabled");
+                MP3Client.Debug.UIState("TryApplyNonClientState", "no active session - showing no-server message, gate controls disabled");
                 LocalLibraryUI.SetDropdownNoServerText(libDropdown);
                 LocalLibraryUI.SetHostGateEnabled(false);
                 return true;
             }
             if (KrokoshaScavMultiplayer.is_server) {
-                Plugin.Debug.UIState("TryApplyNonClientState", "local player is host - showing client-only message, gate controls disabled");
+                MP3Client.Debug.UIState("TryApplyNonClientState", "local player is host - showing client-only message, gate controls disabled");
                 LocalLibraryUI.SetDropdownLocalIsHostText(libDropdown);
                 LocalLibraryUI.SetHostGateEnabled(false);
                 return true;
@@ -57,12 +45,12 @@ namespace MP3Client {
             LocalLibraryUI.SetDropdownHostMissingText(libDropdown, false);
             if (!pingSent) {
                 pingSent = true;
-                Plugin.Debug.NetState("HostPluginCheck", "sending MSG_PLUGIN_PING to host, awaiting pong");
+                MP3Client.Debug.NetState("HostPluginCheck", "sending MSG_PLUGIN_PING to host, awaiting pong");
                 var writer = Net.CreateWriter(Protocol.MSG_PLUGIN_PING);
                 var dm = DeliveryMethod.ReliableOrdered;
                 Net.Client_Send(in dm, in writer);
             }
-            Plugin.Instance.StartCoroutine(WaitForPong(libDropdown));
+            MP3Client.Instance.StartCoroutine(WaitForPong(libDropdown));
         }
         private static IEnumerator WaitForPong(object libDropdown) {
             float deadline = Time.unscaledTime + Protocol.PLUGIN_CHECK_TIMEOUT_SECONDS;
@@ -80,7 +68,7 @@ namespace MP3Client {
             }
         }
         public static void OnPong() {
-            Plugin.Debug.NetState("HostPluginCheck", "received MSG_PLUGIN_PONG - host has the plugin, enabling gate controls");
+            MP3Client.Debug.NetState("HostPluginCheck", "received MSG_PLUGIN_PONG - host has the plugin, enabling gate controls");
             CurrentStatus = Status.Confirmed;
             LocalLibraryUI.SetDropdownHostMissingText(LocalLibraryUI.CurrentLibDropdown, false);
             LocalLibraryUI.SetHostGateEnabled(true);
