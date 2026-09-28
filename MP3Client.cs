@@ -37,9 +37,9 @@ namespace MP3Client {
         public virtual void UIState(string stage, string detail) { }
         public virtual void NetState(string stage, string detail) { }
         public virtual void PatchedMethodsSummary(List<MethodBase> methods) { }
-        public virtual void StateDump(bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool autoRequestMusic, float uiVerticalOffset, bool uiOnTop, bool coloredButtons, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool mp3NoAutoLoadNeutralized, bool deviceFolderLoadTriggered, bool wasNetworkRunning) { }
+        public virtual void StateDump(bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool autoRequestMusic, float uiVerticalOffset, bool uiOnTop, bool coloredButtons, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool deviceFolderLoadTriggered, bool wasNetworkRunning) { }
     }
-    [BepInPlugin("02dumbass.mp3client", "MP3Client", "0.6.1")]
+    [BepInPlugin("02dumbass.mp3client", "MP3Client", "0.6.2")]
     [BepInDependency("KrokoshaCasualtiesMP", BepInDependency.DependencyFlags.HardDependency)]
     public class MP3Client : BaseUnityPlugin {
         internal static ManualLogSource Log;
@@ -67,34 +67,12 @@ namespace MP3Client {
             Updater.ApplyPendingIfAny(Log);
             var harmony = new Harmony("mp3client");
             harmony.PatchAll(typeof(MP3Client).Assembly);
-            TryReconcileMP3NoAutoLoad(harmony);
             LogPatchedMethods(harmony);
             StartCoroutine(Updater.CheckForUpdate(Log));
             StartCoroutine(DeferredRegisterCommands());
         }
         private static void LogPatchedMethods(Harmony harmony) {
             MP3Client.Debug.PatchedMethodsSummary(harmony.GetPatchedMethods().ToList());
-        }
-        internal static bool MP3NoAutoLoadNeutralized;
-        private static void TryReconcileMP3NoAutoLoad(Harmony harmony) {
-            try {
-                var noAutoLoadType = AccessTools.TypeByName("MP3NoAutoLoad.MP3Menu_LoadAllMusic_BlockDevicePatch");
-                if (noAutoLoadType == null) {
-                    MP3Client.Debug.Trace("TryReconcileMP3NoAutoLoad", "MP3NoAutoLoad plugin not detected, nothing to reconcile");
-                    return;
-                }
-                var prefixMethod = AccessTools.Method(noAutoLoadType, "Prefix");
-                if (prefixMethod == null) {
-                    Log.LogWarning("mp3client: MP3NoAutoLoad detected but its Prefix method wasn't found by reflection - it may still independently block LoadAllMusic even after MP3Client approves. See README.");
-                    return;
-                }
-                var ourPrefixMethod = AccessTools.Method(typeof(ReconcileMP3NoAutoLoadPrefix), "Prefix");
-                harmony.Patch(prefixMethod, prefix: new HarmonyMethod(ourPrefixMethod));
-                MP3NoAutoLoadNeutralized = true;
-                Log.LogInfo("mp3client: MP3NoAutoLoad detected - neutralized its independent LoadAllMusic gate, MP3Client's own approval flow is now the sole authority");
-            } catch (Exception e) {
-                Log.LogWarning("mp3client: TryReconcileMP3NoAutoLoad failed: " + e.Message);
-            }
         }
         private IEnumerator DeferredRegisterCommands() {
             while (!SceneManager.GetActiveScene().isLoaded) yield return null;
@@ -185,19 +163,12 @@ namespace MP3Client {
                 CustomMusicFolder.Scan().Count,
                 LocalLibraryUI.HostGatedControls.Count,
                 LocalLibraryUI.CurrentLibDropdown != null,
-                MP3NoAutoLoadNeutralized,
                 HeadlessMusicLoader.DeviceFolderLoadTriggered,
                 wasNetworkRunning
             );
         }
         internal static void RunOnMainThread(Action a) {
             mainThreadQueue.Enqueue(a);
-        }
-    }
-    internal static class ReconcileMP3NoAutoLoadPrefix {
-        internal static bool Prefix(ref bool __result) {
-            __result = true;
-            return false;
         }
     }
 }

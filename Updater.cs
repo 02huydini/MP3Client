@@ -10,7 +10,7 @@ using UnityEngine.Networking;
 namespace MP3Client {
     internal static class UpdaterConfig {
         public const string RELEASE_URL = "https://api.github.com/repos/02huydini/MP3Client/releases/latest";
-        public const string PLUGIN_VERSION = "0.6.1";
+        public const string PLUGIN_VERSION = "0.6.2";
         public const string TAG = "MP3Client";
     }
     internal static class Updater {

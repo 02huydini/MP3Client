@@ -68,7 +68,7 @@ namespace MP3Client {
                 Trace("Awake", "  " + (m.DeclaringType != null ? m.DeclaringType.FullName : "?") + "." + m.Name);
             }
         }
-        public override void StateDump(bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool autoRequestMusic, float uiVerticalOffset, bool uiOnTop, bool coloredButtons, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool mp3NoAutoLoadNeutralized, bool deviceFolderLoadTriggered, bool wasNetworkRunning) {
+        public override void StateDump(bool networkRunning, bool isServer, bool isClient, bool autoLoadMusic, bool autoRequestMusic, float uiVerticalOffset, bool uiOnTop, bool coloredButtons, string hostPluginStatus, bool pendingActive, string pendingRequester, string customMusicFolder, int customMusicSongCount, int gatedUIControlsCount, bool libDropdownBuilt, bool deviceFolderLoadTriggered, bool wasNetworkRunning) {
             Trace("DumpState", "--- MP3Client state dump ---");
             Trace("DumpState", "network_system_is_running=" + networkRunning + " is_server=" + isServer + " is_client=" + isClient);
             Trace("DumpState", "config AutoLoadMusic=" + autoLoadMusic + " AutoRequestMusic=" + autoRequestMusic + " UIVerticalOffset=" + uiVerticalOffset + " UIOnTop=" + uiOnTop + " ColoredButtons=" + coloredButtons);
@@ -76,7 +76,6 @@ namespace MP3Client {
             Trace("DumpState", "pending request active=" + pendingActive + " requester=" + pendingRequester);
             Trace("DumpState", "custommusic folder=" + customMusicFolder + " songs=" + customMusicSongCount);
             Trace("DumpState", "gated UI controls tracked=" + gatedUIControlsCount + " libDropdown built=" + libDropdownBuilt);
-            Trace("DumpState", "MP3NoAutoLoad neutralized=" + mp3NoAutoLoadNeutralized);
             Trace("DumpState", "deviceFolderLoadTriggered=" + deviceFolderLoadTriggered + " wasNetworkRunning=" + wasNetworkRunning);
             Trace("DumpState", "--- end state dump ---");
         }
